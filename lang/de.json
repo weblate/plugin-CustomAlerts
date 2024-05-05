@@ -62,6 +62,7 @@
         "SmsAlertFromName": "Neue Benachrichtigung",
         "StartsWith": "beginnt mit",
         "ThisAppliesTo": "Wird angewendet auf",
+        "ThisAppliesToHelp": "Sie können viele verschiedene Arten von Alarmbedingungen verwenden. %1$sKlicken Sie hier%2$s, um mehr über das Einrichten von benutzerdefinierten Alarmen zu erfahren. Um mehr über %3$sEreignis ausgelöste Alarme%4$s zu erfahren, %5$sklicken Sie hier%6$s.",
         "ValueDecreasedMoreThan": "verminderte sich um mehr als %1$s von %2$s zu %3$s",
         "ValueIncreasedMoreThan": "erhöhte sich um mehr als %1$s von %2$s zu %3$s",
         "ValueIsGreaterThan": "entspricht %2$s, was größer ist als %1$s",
