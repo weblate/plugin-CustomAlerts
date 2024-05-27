@@ -13,8 +13,7 @@
           <th>{{ translate('General_Website') }}</th>
           <th>{{ translate('General_Period') }}</th>
           <th>{{ translate('General_Report') }}</th>
-          <th>{{ translate('General_Edit') }}</th>
-          <th>{{ translate('General_Delete') }}</th>
+          <th>{{ translate('General_Actions') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -40,8 +39,6 @@
               })"
               :title="translate('General_Edit')"
             ></a>
-          </td>
-          <td class="delete">
             <button
               class="deleteAlert table-action"
               @click="deleteAlert(alert.idalert)"
