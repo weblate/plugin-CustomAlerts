@@ -72,7 +72,7 @@ describe("CustomAlerts", function () {
     });
 
     it('should show delete dialog', async function () {
-        await page.click('tbody tr:first-child td.delete button');
+        await page.click('tbody tr:first-child td button.deleteAlert');
         await page.waitForTimeout(350); // wait for animation
         var elem = await page.jQuery('.modal.open');
         expect(await elem.screenshot()).to.matchImage('delete');
