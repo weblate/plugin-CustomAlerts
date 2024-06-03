@@ -1,5 +1,6 @@
 ## Changelog
 
+* 5.0.5 Combined all the actions into one column
 * 5.0.4 Added plugin category for Marketplace
 * 5.0.3 Added inline help to mention events filter FAQ
 * 5.0.2 Fixed alert conditions not reloading on site change
