@@ -62,6 +62,7 @@
         "SmsAlertFromName": "新警報",
         "StartsWith": "起始於",
         "ThisAppliesTo": "要使用的報表",
+        "ThisAppliesToHelp": "您可以使用許多不同類型的警報條件。%1$s點擊此處%2$s了解更多關於設定自定警報的資訊。要了解%3$s事件觸發警報%4$s，%5$s請點擊此處%6$s。",
         "ValueDecreasedMoreThan": "從 %2$s 減少到 %3$s 已超過 %1$s",
         "ValueIncreasedMoreThan": "從 %2$s 增加到 %3$s 已超過 %1$s",
         "ValueIsGreaterThan": "是 %2$s，已大於 %1$s",
