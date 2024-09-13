@@ -10,11 +10,14 @@
 namespace Piwik\Plugins\CustomAlerts;
 
 use Piwik\API\Request as ApiRequest;
+use Piwik\Archive\ArchiveState;
 use Piwik\Common;
 use Piwik\Context;
 use Piwik\DataTable;
 use Piwik\Date;
 use Piwik\Plugins\API\ProcessedReport;
+use Piwik\Plugins\CustomAlerts\Exception\ArchiveIncompleteException;
+use Piwik\Scheduler\RetryableException;
 use Piwik\Site;
 
 /**
@@ -158,10 +161,11 @@ class Processor
 
     /**
      * @param array $alert
-     * @param int   $idSite
-     * @param int   $subPeriodN
+     * @param int $idSite
+     * @param int $subPeriodN
      *
      * @return array
+     * @throws RetryableException If the report has an archive status, and it's something other than complete
      */
     public function getValueForAlertInPast($alert, $idSite, $subPeriodN)
     {
@@ -182,7 +186,8 @@ class Processor
             'date'                   => $dateInPast,
             'flat'                   => 1,
             'disable_queued_filters' => 1,
-            'filter_limit'           => -1
+            'fetch_archive_state'    => 1,
+            'filter_limit'           => -1,
         );
 
         if (!empty($report['parameters'])) {
@@ -193,11 +198,42 @@ class Processor
 
         $table = ApiRequest::processRequest($report['module'] . '.' . $report['action'], $params, $default = []);
 
+        // If the response is a DataTable, check the archiving status
+        if ($table instanceof DataTable) {
+            $this->checkWhetherArchiveIsComplete($alert, $table);
+        }
+
         $value = $this->aggregateToOneValue($table, $alert['metric'], $alert['report_condition'], $alert['report_matched']);
 
         DataTable\Manager::getInstance()->deleteAll($subtableId);
 
         return $value;
+    }
+
+    /**
+     * Checks whether the archive status is complete. We throw an exception if the status is something other than
+     * complete. If no status is found, we do nothing.
+     *
+     * @param array $alert Array containing all the alert information
+     * @param DataTable $table Should have the archive_state metadata set because the fetch_archive_state query param
+     * was set as part of the API request.
+     *
+     * @return void
+     * @throws RetryableException If the archive status is found and isn't complete
+     */
+    protected function checkWhetherArchiveIsComplete(array $alert, DataTable $table): void
+    {
+        $archiveState = $table->getMetadata(DataTable::ARCHIVE_STATE_METADATA_NAME);
+        if (empty($archiveState)) {
+            return;
+        }
+
+        if ($archiveState === ArchiveState::COMPLETE) {
+            return;
+        }
+
+        // Throw an exception since the archive status was provided and isn't complete
+        throw new RetryableException("The alert '{$alert['name']}' is unable to process because archiving is not complete for report: {$alert['report']}.");
     }
 
     private function getDateForAlertInPast($idSite, $period, $subPeriodN)
