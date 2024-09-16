@@ -10,14 +10,18 @@
 namespace Piwik\Plugins\CustomAlerts;
 
 use Piwik\Common;
+use Piwik\Container\StaticContainer;
+use Piwik\Option;
 use Piwik\Piwik;
 use Piwik\Plugins\SitesManager\API as SitesManagerApi;
+use Piwik\Scheduler\Task;
 
 /**
  *
  */
 class CustomAlerts extends \Piwik\Plugin
 {
+    const CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION = 'CustomAlerts_CurrentScheduledTask';
 
     public function registerEvents()
     {
@@ -30,7 +34,9 @@ class CustomAlerts extends \Piwik\Plugin
             'Translate.getClientSideTranslationKeys' => 'getClientSideTranslationKeys',
             'UsersManager.deleteUser'                => 'deleteAlertsForLogin',
             'SitesManager.deleteSite.end'            => 'deleteAlertsForSite',
-            'Db.getTablesInstalled'                  => 'getTablesInstalled'
+            'Db.getTablesInstalled'                  => 'getTablesInstalled',
+            'ScheduledTasks.execute'                 => 'startingScheduledTask',
+            'ScheduledTasks.execute.end'             => 'endingScheduledTask',
         );
     }
 
@@ -181,6 +187,43 @@ class CustomAlerts extends \Piwik\Plugin
         }
 
         return array_values(array_unique($siteIdsHavingAlerts));
+    }
+
+    /**
+     * If the task is for CustomAlerts, save the name of the task in the option so that we know what the currently
+     * running task is.
+     *
+     * @param Task $task
+     * @return void
+     */
+    public function startingScheduledTask(Task $task): void
+    {
+        if (strpos($taskName = $task->getName(), 'Piwik\Plugins\CustomAlerts\Tasks') === false) {
+            return;
+        }
+
+        /** @var \Piwik\Scheduler\Timetable $timetable */
+        $timetable = StaticContainer::getContainer()->get('Piwik\Scheduler\Timetable');
+        // Look up the retry count so that we know whether this is a retry or not
+        $retryCount = $timetable->getRetryCount($taskName);
+        $optionJson = json_encode(['taskName' => $taskName, 'retryCount' => $retryCount]);
+
+        Option::set(self::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION, $optionJson);
+    }
+
+    /**
+     * If the task is for CustomAlerts, delete the option containing the name of the task that just ran.
+     *
+     * @param Task $task
+     * @return void
+     */
+    public function endingScheduledTask(Task $task): void
+    {
+        if (strpos($task->getName(), 'Piwik\Plugins\CustomAlerts\Tasks') === false) {
+            return;
+        }
+
+        Option::delete(self::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION);
     }
 
     public function getClientSideTranslationKeys(&$translations)

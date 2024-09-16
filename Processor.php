@@ -12,9 +12,11 @@ namespace Piwik\Plugins\CustomAlerts;
 use Piwik\API\Request as ApiRequest;
 use Piwik\Archive\ArchiveState;
 use Piwik\Common;
+use Piwik\Container\StaticContainer;
 use Piwik\Context;
 use Piwik\DataTable;
 use Piwik\Date;
+use Piwik\Option;
 use Piwik\Plugins\API\ProcessedReport;
 use Piwik\Plugins\CustomAlerts\Exception\ArchiveIncompleteException;
 use Piwik\Scheduler\RetryableException;
@@ -25,6 +27,8 @@ use Piwik\Site;
  */
 class Processor
 {
+    const CUSTOM_ALERTS_SCHEDULED_TASK_RETRY_OPTION_PREFIX = 'CustomAlertsScheduledTaskRetry_';
+
     /**
      * @var ProcessedReport
      */
@@ -91,9 +95,50 @@ class Processor
     {
         $alerts = $this->getAllAlerts($period);
 
-        foreach ($alerts as $alert) {
-            $this->processAlert($alert, $idSite);
+        $currentTaskOptionString = Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION);
+        $currentTaskOption = json_decode($currentTaskOptionString, true);
+        $retryCount = is_array($currentTaskOption) && !empty($currentTaskOption['retryCount'])
+            ? $currentTaskOption['retryCount'] : 0;
+        $previouslyProcessedAlerts = [];
+        // If this is a retry, look up the list of previously processed alerts and prevent them from processing again
+        if ($retryCount > 0) {
+            $optionString = Option::get($this->getRetryOptionName($period, $idSite));
+            $previouslyProcessedAlerts = !empty($optionString) ? json_decode($optionString, true) ?? [] : [];
         }
+        // Delete the option since we either don't need it anymore or it will be replaced
+        Option::delete($this->getRetryOptionName($period, $idSite));
+
+        $processedAlerts = [];
+        foreach ($alerts as $alert) {
+            // Skip alerts that were processed previously. This should only apply for retries
+            if (in_array($alert['idalert'], array_column($previouslyProcessedAlerts, 'idalert'))) {
+                $processedAlerts[] = $alert;
+
+                continue;
+            }
+
+            try {
+                $this->processAlert($alert, $idSite);
+                $processedAlerts[] = $alert;
+            } catch (RetryableException $e) {
+                // If this is the third retry, don't bother setting the option since only 3 retries are allowed
+                if (intval($retryCount) === 3) {
+                    StaticContainer::get(\Piwik\Log\LoggerInterface::class)->warning("Final retry of alerts task. Unable to process the following alert: {$alert['name']}.");
+
+                    throw $e;
+                }
+
+                // Save the list of alerts that have already been processed to prevent repeats.
+                Option::set($this->getRetryOptionName($period, $idSite), json_encode($processedAlerts));
+
+                throw $e;
+            }
+        }
+    }
+
+    private function getRetryOptionName($period, $idSite): string
+    {
+        return self::CUSTOM_ALERTS_SCHEDULED_TASK_RETRY_OPTION_PREFIX . $period . '_' . $idSite;
     }
 
     private function getAllAlerts($period)
@@ -106,6 +151,12 @@ class Processor
         return new Model();
     }
 
+    /**
+     * @param $alert
+     * @param $idSite
+     * @return void
+     * @throws RetryableException
+     */
     protected function processAlert($alert, $idSite)
     {
         if (!$this->shouldBeProcessed($alert, $idSite)) {
