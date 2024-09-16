@@ -10,7 +10,6 @@
 namespace Piwik\Plugins\CustomAlerts;
 
 use Piwik\API\Request as ApiRequest;
-use Piwik\Archive\ArchiveState;
 use Piwik\Common;
 use Piwik\Container\StaticContainer;
 use Piwik\Context;
@@ -18,7 +17,6 @@ use Piwik\DataTable;
 use Piwik\Date;
 use Piwik\Option;
 use Piwik\Plugins\API\ProcessedReport;
-use Piwik\Plugins\CustomAlerts\Exception\ArchiveIncompleteException;
 use Piwik\Scheduler\RetryableException;
 use Piwik\Site;
 
@@ -241,8 +239,7 @@ class Processor
         );
 
         // Only include the archive state param for versions of Matomo that allow it
-        $matomoVersionSupportsArchiveState = version_compare(\Piwik\Version::VERSION, '5.1.0-b1', '>=');
-        if ($matomoVersionSupportsArchiveState) {
+        if (version_compare(\Piwik\Version::VERSION, '5.1.0-b1', '>=')) {
             $params['fetch_archive_state'] = 1;
         }
 
@@ -255,7 +252,7 @@ class Processor
         $table = ApiRequest::processRequest($report['module'] . '.' . $report['action'], $params, $default = []);
 
         // If the response is a DataTable, check the archiving status
-        if ($table instanceof DataTable && $matomoVersionSupportsArchiveState) {
+        if ($table instanceof DataTable) {
             $this->checkWhetherArchiveIsComplete($alert, $table);
         }
 
@@ -279,12 +276,17 @@ class Processor
      */
     protected function checkWhetherArchiveIsComplete(array $alert, DataTable $table): void
     {
+        // Don't bother checking older versions of Matomo since the data and constants won't be there
+        if (version_compare(\Piwik\Version::VERSION, '5.1.0-b1', '<')) {
+            return;
+        }
+
         $archiveState = $table->getMetadata(DataTable::ARCHIVE_STATE_METADATA_NAME);
         if (empty($archiveState)) {
             return;
         }
 
-        if ($archiveState === ArchiveState::COMPLETE) {
+        if ($archiveState === \Piwik\Archive\ArchiveState::COMPLETE) {
             return;
         }
 

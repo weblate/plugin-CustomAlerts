@@ -196,7 +196,7 @@ class ProcessorTest extends BaseTest
 
     public function testGetValueForAlertInPastIncompleteArchive()
     {
-        // Use today's date so that the archiving shows as complete for the report
+        // Use today's date so that the archiving shows as incomplete for the report
         $date = Date::today();
 
         $t = Fixture::getTracker($this->idSite, $date->getDatetime(), $defaultInit = true);
@@ -239,8 +239,15 @@ class ProcessorTest extends BaseTest
         $this->assertNull($result);
 
         // Should throw an exception if the archive state is incomplete
-        $this->expectException(RetryableException::class);
-        $this->processor->getValueForAlertInPast($alert, $this->idSite, 0);
+        $isNewEnoughMatomo = version_compare(\Piwik\Version::VERSION, '5.1.0-b1', '>=');
+        if ($isNewEnoughMatomo) {
+            $this->expectException(RetryableException::class);
+        }
+        $value = $this->processor->getValueForAlertInPast($alert, $this->idSite, 0);
+
+        if (!$isNewEnoughMatomo) {
+            $this->assertEquals(3, $value, $alert['metric'] . ':' . $alert['report_matched'] . ' should return value 3 but returns ' . $value);
+        }
     }
 
     public function test_filterDataTable_Condition_DoesNotMatchExactly()
