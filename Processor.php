@@ -180,7 +180,7 @@ class Processor
         }
     }
 
-    private function shouldBeProcessed($alert, $idSite)
+    protected function shouldBeProcessed($alert, $idSite)
     {
         if (empty($alert['id_sites']) || !in_array($idSite, $alert['id_sites'])) {
             return false;
@@ -237,9 +237,14 @@ class Processor
             'date'                   => $dateInPast,
             'flat'                   => 1,
             'disable_queued_filters' => 1,
-            'fetch_archive_state'    => 1,
             'filter_limit'           => -1,
         );
+
+        // Only include the archive state param for versions of Matomo that allow it
+        $matomoVersionSupportsArchiveState = version_compare(\Piwik\Version::VERSION, '5.1.0-b1', '>=');
+        if ($matomoVersionSupportsArchiveState) {
+            $params['fetch_archive_state'] = 1;
+        }
 
         if (!empty($report['parameters'])) {
             $params = array_merge($params, $report['parameters']);
@@ -250,7 +255,7 @@ class Processor
         $table = ApiRequest::processRequest($report['module'] . '.' . $report['action'], $params, $default = []);
 
         // If the response is a DataTable, check the archiving status
-        if ($table instanceof DataTable) {
+        if ($table instanceof DataTable && $matomoVersionSupportsArchiveState) {
             $this->checkWhetherArchiveIsComplete($alert, $table);
         }
 

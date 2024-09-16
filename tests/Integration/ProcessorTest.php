@@ -13,6 +13,8 @@ use Piwik\Container\StaticContainer;
 use Piwik\DataTable;
 use Piwik\DataTable\Row;
 use Piwik\Date;
+use Piwik\Option;
+use Piwik\Plugins\CustomAlerts\Model;
 use Piwik\Plugins\CustomAlerts\Processor;
 use Piwik\Scheduler\RetryableException;
 use Piwik\Tests\Framework\Fixture;
@@ -60,6 +62,11 @@ class ProcessorTest extends BaseTest
     private $processor;
 
     /**
+     * @var Model
+     */
+    public $alertModel;
+
+    /**
      * @param Fixture $fixture
      */
     protected static function configureFixture($fixture)
@@ -73,6 +80,8 @@ class ProcessorTest extends BaseTest
         parent::setUp();
 
         $this->processor = new CustomProcessor();
+
+        $this->alertModel = new Model();
     }
 
     public function test_filterDataTable_Condition_MatchesAny()
@@ -187,7 +196,7 @@ class ProcessorTest extends BaseTest
 
     public function testGetValueForAlertInPastIncompleteArchive()
     {
-        // Use yesterday's date so that the archiving shows as complete for the report
+        // Use today's date so that the archiving shows as complete for the report
         $date = Date::today();
 
         $t = Fixture::getTracker($this->idSite, $date->getDatetime(), $defaultInit = true);
@@ -580,5 +589,40 @@ class ProcessorTest extends BaseTest
         $this->expectException(\Exception::class);
 
         $this->assertShouldBeTriggered('NotExistInG', 30, 100, 70);
+    }
+
+    public function testProcessAlerts()
+    {
+        $alertId = $this->createAlert('TestAlert1');
+        $alert = $this->alertModel->getAlert($alertId);
+
+        $mockProcessor = $this->createPartialMock(Processor::class, ['processAlert']);
+        $mockProcessor->expects($this->once())->method('processAlert')->with($this->equalTo($alert), $this->equalTo(1));
+
+        $mockProcessor->processAlerts('day', $this->idSite);
+
+        $this->assertEmpty(Option::get(Processor::CUSTOM_ALERTS_SCHEDULED_TASK_RETRY_OPTION_PREFIX . 'daily_1'));
+    }
+
+    private function createAlert(
+        $name,
+        $period = 'day',
+        $idSites = null,
+        $metric = 'nb_visits',
+        $report = 'MultiSites_getOne',
+        $login = 'superUserLogin'
+    )
+    {
+        if (is_null($idSites)) {
+            $idSites = $this->idSite;
+        }
+        if (!is_array($idSites)) {
+            $idSites = [$idSites];
+        }
+
+        $emails       = ['test1@example.com', 'test2@example.com'];
+        $phoneNumbers = ['0123456789'];
+
+        return $this->alertModel->createAlert($name, $idSites, $login, $period, 0, $emails, $phoneNumbers, $metric, 'less_than', 5, $comparedTo = 1, $report, 'matches_exactly', 'Piwik');
     }
 }
