@@ -16,6 +16,7 @@ use Piwik\Context;
 use Piwik\DataTable;
 use Piwik\Date;
 use Piwik\Option;
+use Piwik\Piwik;
 use Piwik\Plugins\API\ProcessedReport;
 use Piwik\Scheduler\RetryableException;
 use Piwik\Site;
@@ -117,7 +118,7 @@ class Processor
                 $this->processAlert($alert, $idSite);
             } catch (RetryableException $e) {
                 if (intval($retryCount) === 3) {
-                    StaticContainer::get(\Piwik\Log\LoggerInterface::class)->warning("Final retry of alerts task. Unable to process the following alert: {$alert['name']}.");
+                    StaticContainer::get(\Piwik\Log\LoggerInterface::class)->warning(Piwik::translate('CustomAlerts_FinalTaskRetryWarning', [$alert['name']]));
                 }
 
                 throw $e;
@@ -294,7 +295,7 @@ class Processor
         }
 
         // Throw an exception since the archive status was provided and isn't complete
-        throw new RetryableException("The alert '{$alert['name']}' is unable to process because archiving is not complete for report: {$alert['report']}.");
+        throw new RetryableException(Piwik::translate('CustomAlerts_TaskRetryExceptionMessage', [$alert['name'], $alert['report']]));
     }
 
     private function getDateForAlertInPast($idSite, $period, $subPeriodN)

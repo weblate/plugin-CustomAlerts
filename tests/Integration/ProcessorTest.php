@@ -663,7 +663,7 @@ class ProcessorTest extends BaseTest
         $mockProcessor->__construct();
 
         $loggerMock = $this->createMock(LoggerInterface::class);
-        $loggerMock->expects($this->once())->method('warning')->with($this->equalTo('Final retry of alerts task. Unable to process the following alert: TestAlert1.'));
+        $loggerMock->expects($this->once())->method('warning')->with($this->equalTo('CustomAlerts_FinalTaskRetryWarning'));
         StaticContainer::getContainer()->set(LoggerInterface::class, $loggerMock);
 
         $this->expectException(RetryableException::class);
