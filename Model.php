@@ -194,6 +194,23 @@ class Model
         return $alerts;
     }
 
+    public function getTriggeredAlertsFromPastNHours(string $period, int $idSite, int $hours)
+    {
+        $timestamp = Date::now()->addHour(-1 * $hours)->getDatetime();
+
+        $db  = $this->getDb();
+        $sql = $this->getTriggeredAlertsSelectPart()
+            . " WHERE idsite = ?"
+            . " AND  period = ?"
+            . " AND  ts_triggered > ?";
+
+        $values = [$idSite, $period, $timestamp];
+
+        $alerts = $db->fetchAll($sql, $values);
+
+        return $this->completeAlerts($alerts);
+    }
+
     public function getAllAlerts()
     {
         $sql = "SELECT * FROM " . Common::prefixTable('alert');

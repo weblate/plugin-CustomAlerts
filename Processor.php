@@ -25,8 +25,6 @@ use Piwik\Site;
  */
 class Processor
 {
-    const CUSTOM_ALERTS_SCHEDULED_TASK_RETRY_OPTION_PREFIX = 'CustomAlertsScheduledTaskRetry_';
-
     /**
      * @var ProcessedReport
      */
@@ -35,11 +33,16 @@ class Processor
      * @var Validator
      */
     private $validator;
+    /**
+     * @var Model
+     */
+    private $model;
 
-    public function __construct(ProcessedReport $processedReport, Validator $validator)
+    public function __construct(ProcessedReport $processedReport, Validator $validator, Model $model)
     {
         $this->processedReport = $processedReport;
         $this->validator       = $validator;
+        $this->model           = $model;
     }
 
     public static function getComparablesDates()
@@ -89,54 +92,54 @@ class Processor
         );
     }
 
+    /**
+     * @param $period
+     * @param $idSite
+     * @return void
+     * @throws RetryableException The exception that should be caught and handled by the Scheduler class. Only happens
+     * if there's an alert that can't be processed yet and needs to be retried.
+     */
     public function processAlerts($period, $idSite)
     {
         $alerts = $this->getAllAlerts($period);
 
-        $currentTaskOptionString = Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION);
-        $currentTaskOption = json_decode($currentTaskOptionString, true);
-        $retryCount = is_array($currentTaskOption) && !empty($currentTaskOption['retryCount'])
-            ? $currentTaskOption['retryCount'] : 0;
-        $previouslyProcessedAlerts = [];
-        // If this is a retry, look up the list of previously processed alerts and prevent them from processing again
-        if ($retryCount > 0) {
-            $optionString = Option::get($this->getRetryOptionName($period, $idSite));
-            $previouslyProcessedAlerts = !empty($optionString) ? json_decode($optionString, true) ?? [] : [];
-        }
-        // Delete the option since we either don't need it anymore or it will be replaced
-        Option::delete($this->getRetryOptionName($period, $idSite));
+        $retryCount = $this->getRetryCountForCurrentTask();
+        $previouslyProcessedAlerts = $this->getPreviouslyProcessedAlerts($period, intval($idSite));
 
-        $processedAlerts = [];
         foreach ($alerts as $alert) {
-            // Skip alerts that were processed previously. This should only apply for retries
+            // Skip alerts that were processed previously
             if (in_array($alert['idalert'], array_column($previouslyProcessedAlerts, 'idalert'))) {
-                $processedAlerts[] = $alert;
 
                 continue;
             }
 
             try {
                 $this->processAlert($alert, $idSite);
-                $processedAlerts[] = $alert;
             } catch (RetryableException $e) {
-                // If this is the third retry, don't bother setting the option since only 3 retries are allowed
                 if (intval($retryCount) === 3) {
                     StaticContainer::get(\Piwik\Log\LoggerInterface::class)->warning("Final retry of alerts task. Unable to process the following alert: {$alert['name']}.");
-
-                    throw $e;
                 }
-
-                // Save the list of alerts that have already been processed to prevent repeats.
-                Option::set($this->getRetryOptionName($period, $idSite), json_encode($processedAlerts));
 
                 throw $e;
             }
         }
     }
 
-    private function getRetryOptionName($period, $idSite): string
+    protected function getRetryCountForCurrentTask(): int
     {
-        return self::CUSTOM_ALERTS_SCHEDULED_TASK_RETRY_OPTION_PREFIX . $period . '_' . $idSite;
+        $currentTaskOptionString = Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION);
+        $currentTaskOption = json_decode($currentTaskOptionString, true);
+
+        if (!is_array($currentTaskOption) && empty($currentTaskOption['retryCount'])) {
+            return 0;
+        }
+
+        return intval($currentTaskOption['retryCount']);
+    }
+
+    protected function getPreviouslyProcessedAlerts(string $period, int $idSite): array
+    {
+        return $this->model->getTriggeredAlertsFromPastNHours($period, $idSite, 12);
     }
 
     private function getAllAlerts($period)

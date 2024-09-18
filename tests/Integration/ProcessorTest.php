@@ -13,10 +13,14 @@ use Piwik\Container\StaticContainer;
 use Piwik\DataTable;
 use Piwik\DataTable\Row;
 use Piwik\Date;
+use Piwik\Log\LoggerInterface;
 use Piwik\Option;
+use Piwik\Plugins\CustomAlerts\CustomAlerts;
 use Piwik\Plugins\CustomAlerts\Model;
 use Piwik\Plugins\CustomAlerts\Processor;
 use Piwik\Scheduler\RetryableException;
+use Piwik\Scheduler\Task;
+use Piwik\Scheduler\Timetable;
 use Piwik\Tests\Framework\Fixture;
 
 class CustomProcessor extends Processor
@@ -25,7 +29,8 @@ class CustomProcessor extends Processor
     {
         $processedReport = StaticContainer::get('Piwik\Plugins\API\ProcessedReport');
         $validator       = StaticContainer::get('Piwik\Plugins\CustomAlerts\Validator');
-        parent::__construct($processedReport, $validator);
+        $model           = StaticContainer::get('Piwik\Plugins\CustomAlerts\Model');
+        parent::__construct($processedReport, $validator, $model);
     }
 
     public function filterDataTable($dataTable, $condition, $value)
@@ -46,6 +51,11 @@ class CustomProcessor extends Processor
     public function shouldBeTriggered($alert, $metricOne, $metricTwo)
     {
         return parent::shouldBeTriggered($alert, $metricOne, $metricTwo);
+    }
+
+    public function getRetryCountForCurrentTask(): int
+    {
+        return parent::getRetryCountForCurrentTask();
     }
 }
 
@@ -603,12 +613,98 @@ class ProcessorTest extends BaseTest
         $alertId = $this->createAlert('TestAlert1');
         $alert = $this->alertModel->getAlert($alertId);
 
-        $mockProcessor = $this->createPartialMock(Processor::class, ['processAlert']);
+        $mockProcessor = $this->createPartialMock(CustomProcessor::class, ['processAlert']);
         $mockProcessor->expects($this->once())->method('processAlert')->with($this->equalTo($alert), $this->equalTo(1));
+        $mockProcessor->__construct();
 
         $mockProcessor->processAlerts('day', $this->idSite);
+    }
 
-        $this->assertEmpty(Option::get(Processor::CUSTOM_ALERTS_SCHEDULED_TASK_RETRY_OPTION_PREFIX . 'daily_1'));
+    public function testProcessAlertsSkipPreviouslyProcessedAlerts()
+    {
+        $alertId = $this->createAlert('TestAlert1');
+        $this->alertModel->getAlert($alertId);
+
+        // Mark the alert as triggered so that it won't process again
+        $this->alertModel->triggerAlert($alertId, $this->idSite, 10, 20, Date::now()->getDatetime());
+
+        $mockProcessor = $this->createPartialMock(CustomProcessor::class, ['processAlert']);
+        $mockProcessor->expects($this->never())->method('processAlert');
+        $mockProcessor->__construct();
+
+        $mockProcessor->processAlerts('day', $this->idSite);
+    }
+
+    public function testProcessAlertsOnException()
+    {
+        $alertId = $this->createAlert('TestAlert1');
+        $alert = $this->alertModel->getAlert($alertId);
+
+        $mockProcessor = $this->createPartialMock(CustomProcessor::class, ['processAlert']);
+        $mockProcessor->expects($this->once())->method('processAlert')->with($this->equalTo($alert), $this->equalTo(1))->willThrowException(new RetryableException());
+        $mockProcessor->__construct();
+
+        $loggerMock = $this->createMock(LoggerInterface::class);
+        $loggerMock->expects($this->never())->method('warning');
+        StaticContainer::getContainer()->set(LoggerInterface::class, $loggerMock);
+
+        $this->expectException(RetryableException::class);
+        $mockProcessor->processAlerts('day', $this->idSite);
+    }
+
+    public function testProcessAlertsOnExceptionLastRetry()
+    {
+        $alertId = $this->createAlert('TestAlert1');
+        $alert = $this->alertModel->getAlert($alertId);
+
+        $mockProcessor = $this->createPartialMock(CustomProcessor::class, ['processAlert', 'getRetryCountForCurrentTask']);
+        $mockProcessor->expects($this->once())->method('processAlert')->with($this->equalTo($alert), $this->equalTo(1))->willThrowException(new RetryableException());
+        $mockProcessor->expects($this->once())->method('getRetryCountForCurrentTask')->willReturn(3);
+        $mockProcessor->__construct();
+
+        $loggerMock = $this->createMock(LoggerInterface::class);
+        $loggerMock->expects($this->once())->method('warning')->with($this->equalTo('Final retry of alerts task. Unable to process the following alert: TestAlert1.'));
+        StaticContainer::getContainer()->set(LoggerInterface::class, $loggerMock);
+
+        $this->expectException(RetryableException::class);
+        $mockProcessor->processAlerts('day', $this->idSite);
+    }
+
+    public function testGetRetryCountForCurrentTask()
+    {
+        $task = $this->getTestTask();
+        $customAlerts = new CustomAlerts();
+        $customAlerts->startingScheduledTask($task);
+
+        $this->assertSame(0, $this->processor->getRetryCountForCurrentTask());
+    }
+
+    public function testGetRetryCountForCurrentTaskMissingOption()
+    {
+        $this->assertSame(0, $this->processor->getRetryCountForCurrentTask());
+    }
+
+    public function testGetRetryCountForCurrentTaskInvalidOption()
+    {
+        Option::set(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION, '{"invalid JSON"}');
+
+        $this->assertSame(0, $this->processor->getRetryCountForCurrentTask());
+    }
+
+    public function testGetRetryCountForCurrentTaskWithRetryCount()
+    {
+        $task = $this->getTestTask();
+        StaticContainer::get(Timetable::class)->incrementRetryCount($task->getName());
+        $customAlerts = new CustomAlerts();
+        $customAlerts->startingScheduledTask($task);
+
+        $this->assertSame(1, $this->processor->getRetryCountForCurrentTask());
+
+        // Increment and test again
+        StaticContainer::get(Timetable::class)->incrementRetryCount($task->getName());
+        $customAlerts->startingScheduledTask($task);
+
+        $this->assertSame(2, $this->processor->getRetryCountForCurrentTask());
     }
 
     private function createAlert(
@@ -631,5 +727,11 @@ class ProcessorTest extends BaseTest
         $phoneNumbers = ['0123456789'];
 
         return $this->alertModel->createAlert($name, $idSites, $login, $period, 0, $emails, $phoneNumbers, $metric, 'less_than', 5, $comparedTo = 1, $report, 'matches_exactly', 'Piwik');
+    }
+
+    private function getTestTask(): Task
+    {
+        $schedule = \Piwik\Scheduler\Schedule\Schedule::factory('daily');
+        return new Task(\Piwik\Plugins\CustomAlerts\Tasks::class, 'runAlertsDaily', 1, $schedule, \Piwik\Plugin\Tasks::NORMAL_PRIORITY);
     }
 }
