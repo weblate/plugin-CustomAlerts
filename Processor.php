@@ -181,7 +181,7 @@ class Processor
         }
     }
 
-    protected function shouldBeProcessed($alert, $idSite)
+    private function shouldBeProcessed($alert, $idSite)
     {
         if (empty($alert['id_sites']) || !in_array($idSite, $alert['id_sites'])) {
             return false;
@@ -238,7 +238,7 @@ class Processor
             'date'                   => $dateInPast,
             'flat'                   => 1,
             'disable_queued_filters' => 1,
-            'filter_limit'           => -1,
+            'filter_limit'           => -1
         );
 
         // Only include the archive state param for versions of Matomo that allow it

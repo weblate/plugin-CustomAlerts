@@ -35,9 +35,14 @@ class CustomAlertsTest extends BaseTest
         $this->plugin = new CustomAlerts();
     }
 
-    private function getTestTask(): Task
+    private function getTestTask(bool $useOtherPluginTask = false): Task
     {
         $schedule = \Piwik\Scheduler\Schedule\Schedule::factory('daily');
+
+        if ($useOtherPluginTask) {
+            return new Task(\Piwik\Plugins\ActivityLog\Tasks::class, 'anonymizeIps', 1, $schedule, \Piwik\Plugin\Tasks::NORMAL_PRIORITY);
+        }
+
         return new Task(\Piwik\Plugins\CustomAlerts\Tasks::class, 'runAlertsDaily', 1, $schedule, \Piwik\Plugin\Tasks::NORMAL_PRIORITY);
     }
 
@@ -170,7 +175,7 @@ class CustomAlertsTest extends BaseTest
 
     public function testStartingScheduledTask()
     {
-        $this->assertEmpty(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
+        $this->assertFalse(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
 
         $task = $this->getTestTask();
         $this->plugin->startingScheduledTask($task);
@@ -180,7 +185,7 @@ class CustomAlertsTest extends BaseTest
 
     public function testStartingScheduledTaskAsRetry()
     {
-        $this->assertEmpty(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
+        $this->assertFalse(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
 
         $task = $this->getTestTask();
 
@@ -199,6 +204,16 @@ class CustomAlertsTest extends BaseTest
         $this->checkOptionStringValue(2);
     }
 
+    public function testStartingScheduledTaskOtherPlugin()
+    {
+        $this->assertFalse(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
+
+        $task = $this->getTestTask(true);
+        $this->plugin->startingScheduledTask($task);
+
+        $this->assertFalse(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
+    }
+
     public function testEndingScheduledTask()
     {
         $this->assertEmpty(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
@@ -211,6 +226,22 @@ class CustomAlertsTest extends BaseTest
 
         // Call the method to delete the option and confirm that it has been deleted
         $this->plugin->endingScheduledTask($task);
+        $this->assertFalse(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
+    }
+
+    public function testEndingScheduledTaskOtherPlugin()
+    {
         $this->assertEmpty(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
+
+        $task = $this->getTestTask();
+
+        // Create the record and confirm that it's there
+        $this->plugin->startingScheduledTask($task);
+        $this->checkOptionStringValue();
+
+        // Confirm that a task for a different plugin doesn't delete the CustomAlerts option
+        $task = $this->getTestTask(true);
+        $this->plugin->endingScheduledTask($task);
+        $this->checkOptionStringValue();
     }
 }
