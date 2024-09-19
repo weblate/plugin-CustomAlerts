@@ -14,22 +14,28 @@ use Piwik\DataTable;
 use Piwik\DataTable\Row;
 use Piwik\Date;
 use Piwik\Log\LoggerInterface;
-use Piwik\Option;
 use Piwik\Plugins\CustomAlerts\CustomAlerts;
 use Piwik\Plugins\CustomAlerts\Model;
 use Piwik\Plugins\CustomAlerts\Processor;
 use Piwik\Scheduler\RetryableException;
 use Piwik\Scheduler\Task;
-use Piwik\Scheduler\Timetable;
 use Piwik\Tests\Framework\Fixture;
 
 class CustomProcessor extends Processor
 {
+    public $processedCount;
+
+    public $throwExceptionOnProcessedAlertNumbers;
+
     public function __construct()
     {
         $processedReport = StaticContainer::get('Piwik\Plugins\API\ProcessedReport');
         $validator       = StaticContainer::get('Piwik\Plugins\CustomAlerts\Validator');
         $model           = StaticContainer::get('Piwik\Plugins\CustomAlerts\Model');
+
+        $this->processedCount = 0;
+        $this->throwExceptionOnProcessedAlertNumbers = [];
+
         parent::__construct($processedReport, $validator, $model);
     }
 
@@ -45,17 +51,21 @@ class CustomProcessor extends Processor
 
     public function processAlert($alert, $idSite)
     {
-        parent::processAlert($alert, $idSite);
+        ++$this->processedCount;
+
+        if (!empty($this->throwExceptionOnProcessedAlertNumbers) && in_array($this->processedCount, $this->throwExceptionOnProcessedAlertNumbers)) {
+            throw new RetryableException('Retryable exception');
+        }
+
+        // If we're testing that the exception gets thrown, don't try to actually process the alert
+        if (empty($this->throwExceptionOnProcessedAlertNumbers)) {
+            parent::processAlert($alert, $idSite);
+        }
     }
 
     public function shouldBeTriggered($alert, $metricOne, $metricTwo)
     {
         return parent::shouldBeTriggered($alert, $metricOne, $metricTwo);
-    }
-
-    public function getRetryCountForCurrentTask(): int
-    {
-        return parent::getRetryCountForCurrentTask();
     }
 }
 
@@ -88,10 +98,18 @@ class ProcessorTest extends BaseTest
     public function setUp(): void
     {
         parent::setUp();
+        Fixture::loadAllTranslations();
 
         $this->processor = new CustomProcessor();
 
         $this->alertModel = new Model();
+        CustomAlerts::$currentlyRunningScheduledTaskRetryCount = 0;
+    }
+
+    public function tearDown(): void
+    {
+        Fixture::resetTranslations();
+        parent::tearDown();
     }
 
     public function test_filterDataTable_Condition_MatchesAny()
@@ -652,59 +670,78 @@ class ProcessorTest extends BaseTest
         $mockProcessor->processAlerts('day', $this->idSite);
     }
 
+    public function testProcessAlertsOnExceptionMultipleAlerts()
+    {
+        $this->createAlert('TestAlert1');
+        $this->createAlert('TestAlert2');
+        $this->createAlert('TestAlert3');
+        $this->createAlert('TestAlert4');
+        $this->createAlert('TestAlert5');
+
+        $this->processor->throwExceptionOnProcessedAlertNumbers = [3, 5];
+
+        $loggerMock = $this->createMock(LoggerInterface::class);
+        $loggerMock->expects($this->never())->method('warning');
+        StaticContainer::getContainer()->set(LoggerInterface::class, $loggerMock);
+
+        try {
+            $this->processor->processAlerts('day', $this->idSite);
+            $this->fail('This should have thrown an exception');
+        } catch (RetryableException $e) {
+            $this->assertSame(5, $this->processor->processedCount);
+            $errorMessage = "The following alerts were unable to process because archiving is not complete for the associated reports: \nID: 3 Name: TestAlert3 Login: superUserLogin Report: MultiSites_getOne\nID: 5 Name: TestAlert5 Login: superUserLogin Report: MultiSites_getOne";
+            $this->assertSame($errorMessage, $e->getMessage());
+        }
+    }
+
     public function testProcessAlertsOnExceptionLastRetry()
     {
         $alertId = $this->createAlert('TestAlert1');
         $alert = $this->alertModel->getAlert($alertId);
 
-        $mockProcessor = $this->createPartialMock(CustomProcessor::class, ['processAlert', 'getRetryCountForCurrentTask']);
+        $mockProcessor = $this->createPartialMock(CustomProcessor::class, ['processAlert']);
         $mockProcessor->expects($this->once())->method('processAlert')->with($this->equalTo($alert), $this->equalTo(1))->willThrowException(new RetryableException());
-        $mockProcessor->expects($this->once())->method('getRetryCountForCurrentTask')->willReturn(3);
         $mockProcessor->__construct();
 
+        CustomAlerts::$currentlyRunningScheduledTaskRetryCount = 3;
+
+        $warningMessage = "Final retry of alerts task. Unable to process the following alerts: \nID: 1 Name: TestAlert1 Login: superUserLogin Report: MultiSites_getOne";
+
         $loggerMock = $this->createMock(LoggerInterface::class);
-        $loggerMock->expects($this->once())->method('warning')->with($this->equalTo('CustomAlerts_FinalTaskRetryWarning'));
+        $loggerMock->expects($this->once())->method('warning')->with($this->equalTo($warningMessage));
         StaticContainer::getContainer()->set(LoggerInterface::class, $loggerMock);
 
         $this->expectException(RetryableException::class);
         $mockProcessor->processAlerts('day', $this->idSite);
     }
 
-    public function testGetRetryCountForCurrentTask()
+    public function testProcessAlertsOnExceptionLastRetryMultipleAlerts()
     {
-        $task = $this->getTestTask();
-        $customAlerts = new CustomAlerts();
-        $customAlerts->startingScheduledTask($task);
+        $this->createAlert('TestAlert1');
+        $this->createAlert('TestAlert2');
+        $this->createAlert('TestAlert3');
+        $this->createAlert('TestAlert4');
+        $this->createAlert('TestAlert5');
 
-        $this->assertSame(0, $this->processor->getRetryCountForCurrentTask());
-    }
+        CustomAlerts::$currentlyRunningScheduledTaskRetryCount = 3;
+        $this->processor->throwExceptionOnProcessedAlertNumbers = [2, 4];
 
-    public function testGetRetryCountForCurrentTaskMissingOption()
-    {
-        $this->assertSame(0, $this->processor->getRetryCountForCurrentTask());
-    }
+        $failedAlertsString = "\nID: 2 Name: TestAlert2 Login: superUserLogin Report: MultiSites_getOne\nID: 4 Name: TestAlert4 Login: superUserLogin Report: MultiSites_getOne";
 
-    public function testGetRetryCountForCurrentTaskInvalidOption()
-    {
-        Option::set(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION, '{"invalid JSON"}');
+        $warningMessage = "Final retry of alerts task. Unable to process the following alerts: {$failedAlertsString}";
 
-        $this->assertSame(0, $this->processor->getRetryCountForCurrentTask());
-    }
+        $loggerMock = $this->createMock(LoggerInterface::class);
+        $loggerMock->expects($this->once())->method('warning')->with($this->equalTo($warningMessage));
+        StaticContainer::getContainer()->set(LoggerInterface::class, $loggerMock);
 
-    public function testGetRetryCountForCurrentTaskWithRetryCount()
-    {
-        $task = $this->getTestTask();
-        StaticContainer::get(Timetable::class)->incrementRetryCount($task->getName());
-        $customAlerts = new CustomAlerts();
-        $customAlerts->startingScheduledTask($task);
-
-        $this->assertSame(1, $this->processor->getRetryCountForCurrentTask());
-
-        // Increment and test again
-        StaticContainer::get(Timetable::class)->incrementRetryCount($task->getName());
-        $customAlerts->startingScheduledTask($task);
-
-        $this->assertSame(2, $this->processor->getRetryCountForCurrentTask());
+        try {
+            $this->processor->processAlerts('day', $this->idSite);
+            $this->fail('This should have thrown an exception');
+        } catch (RetryableException $e) {
+            $this->assertSame(5, $this->processor->processedCount);
+            $errorMessage = "The following alerts were unable to process because archiving is not complete for the associated reports: {$failedAlertsString}";
+            $this->assertSame($errorMessage, $e->getMessage());
+        }
     }
 
     private function createAlert(

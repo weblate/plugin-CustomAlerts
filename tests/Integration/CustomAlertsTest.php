@@ -33,6 +33,9 @@ class CustomAlertsTest extends BaseTest
         parent::setUp();
 
         $this->plugin = new CustomAlerts();
+
+        CustomAlerts::$currentlyRunningScheduledTaskName = null;
+        CustomAlerts::$currentlyRunningScheduledTaskRetryCount = 0;
     }
 
     private function getTestTask(bool $useOtherPluginTask = false): Task
@@ -46,13 +49,14 @@ class CustomAlertsTest extends BaseTest
         return new Task(\Piwik\Plugins\CustomAlerts\Tasks::class, 'runAlertsDaily', 1, $schedule, \Piwik\Plugin\Tasks::NORMAL_PRIORITY);
     }
 
-    private function checkOptionStringValue(int $expectedRetryCount = 0)
+    private function checkOptionStringValue(bool $isNullTaskName = false, int $expectedRetryCount = 0)
     {
-        $optionString = Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION);
-        $this->assertNotEmpty($optionString);
-        $optionArray = json_decode($optionString, true);
-        $this->assertSame('Piwik\Plugins\CustomAlerts\Tasks.runAlertsDaily_1', $optionArray['taskName']);
-        $this->assertSame($expectedRetryCount, $optionArray['retryCount']);
+        if ($isNullTaskName) {
+            $this->assertNull(CustomAlerts::$currentlyRunningScheduledTaskName);
+        } else {
+            $this->assertSame('Piwik\Plugins\CustomAlerts\Tasks.runAlertsDaily_1', CustomAlerts::$currentlyRunningScheduledTaskName);
+        }
+        $this->assertSame($expectedRetryCount, CustomAlerts::$currentlyRunningScheduledTaskRetryCount);
     }
 
     public function test_getSiteIdsHavingAlerts()
@@ -175,7 +179,7 @@ class CustomAlertsTest extends BaseTest
 
     public function testStartingScheduledTask()
     {
-        $this->assertFalse(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
+        $this->checkOptionStringValue(true);
 
         $task = $this->getTestTask();
         $this->plugin->startingScheduledTask($task);
@@ -185,7 +189,7 @@ class CustomAlertsTest extends BaseTest
 
     public function testStartingScheduledTaskAsRetry()
     {
-        $this->assertFalse(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
+        $this->checkOptionStringValue(true);
 
         $task = $this->getTestTask();
 
@@ -194,29 +198,29 @@ class CustomAlertsTest extends BaseTest
 
         $this->plugin->startingScheduledTask($task);
 
-        $this->checkOptionStringValue(1);
+        $this->checkOptionStringValue(false, 1);
 
         // Increment and check again
         StaticContainer::get(Timetable::class)->incrementRetryCount($task->getName());
 
         $this->plugin->startingScheduledTask($task);
 
-        $this->checkOptionStringValue(2);
+        $this->checkOptionStringValue(false, 2);
     }
 
     public function testStartingScheduledTaskOtherPlugin()
     {
-        $this->assertFalse(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
+        $this->checkOptionStringValue(true);
 
         $task = $this->getTestTask(true);
         $this->plugin->startingScheduledTask($task);
 
-        $this->assertFalse(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
+        $this->assertNull(CustomAlerts::$currentlyRunningScheduledTaskName);
     }
 
     public function testEndingScheduledTask()
     {
-        $this->assertEmpty(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
+        $this->checkOptionStringValue(true);
 
         $task = $this->getTestTask();
 
@@ -224,14 +228,14 @@ class CustomAlertsTest extends BaseTest
         $this->plugin->startingScheduledTask($task);
         $this->checkOptionStringValue();
 
-        // Call the method to delete the option and confirm that it has been deleted
+        // Call the method to clear the values and confirm that it has been done
         $this->plugin->endingScheduledTask($task);
-        $this->assertFalse(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
+        $this->checkOptionStringValue(true);
     }
 
     public function testEndingScheduledTaskOtherPlugin()
     {
-        $this->assertEmpty(Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION));
+        $this->checkOptionStringValue(true);
 
         $task = $this->getTestTask();
 
@@ -239,7 +243,7 @@ class CustomAlertsTest extends BaseTest
         $this->plugin->startingScheduledTask($task);
         $this->checkOptionStringValue();
 
-        // Confirm that a task for a different plugin doesn't delete the CustomAlerts option
+        // Confirm that a task for a different plugin doesn't clear the CustomAlerts values
         $task = $this->getTestTask(true);
         $this->plugin->endingScheduledTask($task);
         $this->checkOptionStringValue();

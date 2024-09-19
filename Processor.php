@@ -104,38 +104,36 @@ class Processor
     {
         $alerts = $this->getAllAlerts($period);
 
-        $retryCount = $this->getRetryCountForCurrentTask();
         $previouslyProcessedAlerts = $this->getPreviouslyProcessedAlerts($period, intval($idSite));
 
+        $failedAlerts = [];
         foreach ($alerts as $alert) {
             // Skip alerts that were processed previously
             if (in_array($alert['idalert'], array_column($previouslyProcessedAlerts, 'idalert'))) {
-
                 continue;
             }
 
             try {
                 $this->processAlert($alert, $idSite);
             } catch (RetryableException $e) {
-                if (intval($retryCount) === 3) {
-                    StaticContainer::get(\Piwik\Log\LoggerInterface::class)->warning(Piwik::translate('CustomAlerts_FinalTaskRetryWarning', [$alert['name']]));
-                }
-
-                throw $e;
+                $failedAlerts[] = $alert;
             }
         }
-    }
 
-    protected function getRetryCountForCurrentTask(): int
-    {
-        $currentTaskOptionString = Option::get(CustomAlerts::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION);
-        $currentTaskOption = json_decode($currentTaskOptionString, true);
+        if (!empty($failedAlerts)) {
+            // Build up a retry exception message based of the alerts that failed to process
+            $alertsString = '';
+            foreach ($failedAlerts as $failedAlert) {
+                $alertsString .= "\nID: {$failedAlert['idalert']} Name: {$failedAlert['name']} Login: {$failedAlert['login']} Report: {$failedAlert['report']}";
+            }
 
-        if (!is_array($currentTaskOption) && empty($currentTaskOption['retryCount'])) {
-            return 0;
+            if (CustomAlerts::$currentlyRunningScheduledTaskRetryCount === 3) {
+                StaticContainer::get(\Piwik\Log\LoggerInterface::class)->warning(Piwik::translate('CustomAlerts_FinalTaskRetryWarning', [$alertsString]));
+            }
+
+            // Throw an exception to let the scheduler know to retry the task
+            throw new RetryableException(Piwik::translate('CustomAlerts_TaskRetryExceptionMessage', [$alertsString]));
         }
-
-        return intval($currentTaskOption['retryCount']);
     }
 
     protected function getPreviouslyProcessedAlerts(string $period, int $idSite): array
@@ -295,7 +293,7 @@ class Processor
         }
 
         // Throw an exception since the archive status was provided and isn't complete
-        throw new RetryableException(Piwik::translate('CustomAlerts_TaskRetryExceptionMessage', [$alert['name'], $alert['report']]));
+        throw new RetryableException('This alert is not ready to process due to incomplete archiving');
     }
 
     private function getDateForAlertInPast($idSite, $period, $subPeriodN)

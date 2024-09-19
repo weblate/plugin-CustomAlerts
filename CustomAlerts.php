@@ -21,7 +21,15 @@ use Piwik\Scheduler\Task;
  */
 class CustomAlerts extends \Piwik\Plugin
 {
-    const CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION = 'CustomAlerts_CurrentScheduledTask';
+    /**
+     * @var null|string
+     */
+    public static $currentlyRunningScheduledTaskName = null;
+
+    /**
+     * @var int
+     */
+    public static $currentlyRunningScheduledTaskRetryCount = 0;
 
     public function registerEvents()
     {
@@ -190,7 +198,7 @@ class CustomAlerts extends \Piwik\Plugin
     }
 
     /**
-     * If the task is for CustomAlerts, save the name of the task in the option so that we know what the currently
+     * If the task is for CustomAlerts, save the name of the task as static property so that we know what the currently
      * running task is.
      *
      * @param Task $task
@@ -202,17 +210,16 @@ class CustomAlerts extends \Piwik\Plugin
             return;
         }
 
+        self::$currentlyRunningScheduledTaskName = $taskName;
+
         /** @var \Piwik\Scheduler\Timetable $timetable */
         $timetable = StaticContainer::getContainer()->get('Piwik\Scheduler\Timetable');
         // Look up the retry count so that we know whether this is a retry or not
-        $retryCount = $timetable->getRetryCount($taskName);
-        $optionJson = json_encode(['taskName' => $taskName, 'retryCount' => $retryCount]);
-
-        Option::set(self::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION, $optionJson);
+        self::$currentlyRunningScheduledTaskRetryCount = $timetable->getRetryCount($taskName);
     }
 
     /**
-     * If the task is for CustomAlerts, delete the option containing the name of the task that just ran.
+     * If the task is for CustomAlerts, clear the property containing the name of the task that just ran.
      *
      * @param Task $task
      * @return void
@@ -223,7 +230,8 @@ class CustomAlerts extends \Piwik\Plugin
             return;
         }
 
-        Option::delete(self::CUSTOM_ALERTS_CURRENT_SCHEDULED_TASK_OPTION);
+        self::$currentlyRunningScheduledTaskName = null;
+        self::$currentlyRunningScheduledTaskRetryCount = 0;
     }
 
     public function getClientSideTranslationKeys(&$translations)
