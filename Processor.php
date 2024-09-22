@@ -11,10 +11,14 @@ namespace Piwik\Plugins\CustomAlerts;
 
 use Piwik\API\Request as ApiRequest;
 use Piwik\Common;
+use Piwik\Container\StaticContainer;
 use Piwik\Context;
 use Piwik\DataTable;
 use Piwik\Date;
+use Piwik\Option;
+use Piwik\Piwik;
 use Piwik\Plugins\API\ProcessedReport;
+use Piwik\Scheduler\RetryableException;
 use Piwik\Site;
 
 /**
@@ -30,11 +34,16 @@ class Processor
      * @var Validator
      */
     private $validator;
+    /**
+     * @var Model
+     */
+    private $model;
 
-    public function __construct(ProcessedReport $processedReport, Validator $validator)
+    public function __construct(ProcessedReport $processedReport, Validator $validator, Model $model)
     {
         $this->processedReport = $processedReport;
         $this->validator       = $validator;
+        $this->model           = $model;
     }
 
     public static function getComparablesDates()
@@ -84,13 +93,52 @@ class Processor
         );
     }
 
+    /**
+     * @param $period
+     * @param $idSite
+     * @return void
+     * @throws RetryableException The exception that should be caught and handled by the Scheduler class. Only happens
+     * if there's an alert that can't be processed yet and needs to be retried.
+     */
     public function processAlerts($period, $idSite)
     {
         $alerts = $this->getAllAlerts($period);
 
+        $previouslyProcessedAlerts = $this->getPreviouslyProcessedAlerts($period, intval($idSite));
+
+        $failedAlerts = [];
         foreach ($alerts as $alert) {
-            $this->processAlert($alert, $idSite);
+            // Skip alerts that were processed previously
+            if (in_array($alert['idalert'], array_column($previouslyProcessedAlerts, 'idalert'))) {
+                continue;
+            }
+
+            try {
+                $this->processAlert($alert, $idSite);
+            } catch (RetryableException $e) {
+                $failedAlerts[] = $alert;
+            }
         }
+
+        if (!empty($failedAlerts)) {
+            // Build up a retry exception message based of the alerts that failed to process
+            $alertsString = '';
+            foreach ($failedAlerts as $failedAlert) {
+                $alertsString .= "\nID: {$failedAlert['idalert']} Name: {$failedAlert['name']} Login: {$failedAlert['login']} Report: {$failedAlert['report']}";
+            }
+
+            if (CustomAlerts::$currentlyRunningScheduledTaskRetryCount === 3) {
+                StaticContainer::get(\Piwik\Log\LoggerInterface::class)->warning(Piwik::translate('CustomAlerts_FinalTaskRetryWarning', [$alertsString]));
+            }
+
+            // Throw an exception to let the scheduler know to retry the task
+            throw new RetryableException(Piwik::translate('CustomAlerts_TaskRetryExceptionMessage', [$alertsString]));
+        }
+    }
+
+    protected function getPreviouslyProcessedAlerts(string $period, int $idSite): array
+    {
+        return $this->model->getTriggeredAlertsFromPastNHours($period, $idSite, 12);
     }
 
     private function getAllAlerts($period)
@@ -103,6 +151,12 @@ class Processor
         return new Model();
     }
 
+    /**
+     * @param $alert
+     * @param $idSite
+     * @return void
+     * @throws RetryableException
+     */
     protected function processAlert($alert, $idSite)
     {
         if (!$this->shouldBeProcessed($alert, $idSite)) {
@@ -158,10 +212,11 @@ class Processor
 
     /**
      * @param array $alert
-     * @param int   $idSite
-     * @param int   $subPeriodN
+     * @param int $idSite
+     * @param int $subPeriodN
      *
      * @return array
+     * @throws RetryableException If the report has an archive status, and it's something other than complete
      */
     public function getValueForAlertInPast($alert, $idSite, $subPeriodN)
     {
@@ -185,6 +240,11 @@ class Processor
             'filter_limit'           => -1
         );
 
+        // Only include the archive state param for versions of Matomo that allow it
+        if (version_compare(\Piwik\Version::VERSION, '5.1.0-b1', '>=')) {
+            $params['fetch_archive_state'] = 1;
+        }
+
         if (!empty($report['parameters'])) {
             $params = array_merge($params, $report['parameters']);
         }
@@ -193,11 +253,47 @@ class Processor
 
         $table = ApiRequest::processRequest($report['module'] . '.' . $report['action'], $params, $default = []);
 
+        // If the response is a DataTable, check the archiving status
+        if ($table instanceof DataTable) {
+            $this->checkWhetherArchiveIsComplete($alert, $table);
+        }
+
         $value = $this->aggregateToOneValue($table, $alert['metric'], $alert['report_condition'], $alert['report_matched']);
 
         DataTable\Manager::getInstance()->deleteAll($subtableId);
 
         return $value;
+    }
+
+    /**
+     * Checks whether the archive status is complete. We throw an exception if the status is something other than
+     * complete. If no status is found, we do nothing.
+     *
+     * @param array $alert Array containing all the alert information
+     * @param DataTable $table Should have the archive_state metadata set because the fetch_archive_state query param
+     * was set as part of the API request.
+     *
+     * @return void
+     * @throws RetryableException If the archive status is found and isn't complete
+     */
+    protected function checkWhetherArchiveIsComplete(array $alert, DataTable $table): void
+    {
+        // Don't bother checking older versions of Matomo since the data and constants won't be there
+        if (version_compare(\Piwik\Version::VERSION, '5.1.0-b1', '<')) {
+            return;
+        }
+
+        $archiveState = $table->getMetadata(DataTable::ARCHIVE_STATE_METADATA_NAME);
+        if (empty($archiveState)) {
+            return;
+        }
+
+        if ($archiveState === \Piwik\Archive\ArchiveState::COMPLETE) {
+            return;
+        }
+
+        // Throw an exception since the archive status was provided and isn't complete
+        throw new RetryableException('This alert is not ready to process due to incomplete archiving');
     }
 
     private function getDateForAlertInPast($idSite, $period, $subPeriodN)

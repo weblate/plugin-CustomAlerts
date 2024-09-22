@@ -411,4 +411,67 @@ class ModelTest extends BaseTest
         $this->assertEquals(3, $alerts[1]['idtriggered']);
     }
 
+    public function testGetTriggeredAlertsFromPastNHours()
+    {
+        $now = Date::now();
+        $this->model->triggerAlert(1, 1, 99, 48, $now->getDatetime());
+        $this->model->triggerAlert(1, 2, 99, 48, $now->getDatetime());
+        $this->model->triggerAlert(1, 3, 99, 48, $now->getDatetime());
+        $this->model->triggerAlert(1, 1, 99, 48, $now->addHour(-1)->getDatetime());
+        $this->model->triggerAlert(1, 2, 99, 48, $now->addHour(-1)->getDatetime());
+        $this->model->triggerAlert(1, 3, 99, 48, $now->addHour(-1)->getDatetime());
+        $this->model->triggerAlert(1, 1, 99, 48, $now->addHour(-2)->getDatetime());
+        $this->model->triggerAlert(1, 2, 99, 48, $now->addHour(-2)->getDatetime());
+        $this->model->triggerAlert(1, 3, 99, 48, $now->addHour(-2)->getDatetime());
+        $this->model->triggerAlert(1, 1, 99, 48, $now->addHour(-3)->getDatetime());
+        $this->model->triggerAlert(1, 2, 99, 48, $now->addHour(-3)->getDatetime());
+        $this->model->triggerAlert(1, 3, 99, 48, $now->addHour(-3)->getDatetime());
+        $this->model->triggerAlert(1, 1, 99, 48, $now->addHour(-4)->getDatetime());
+        $this->model->triggerAlert(1, 2, 99, 48, $now->addHour(-4)->getDatetime());
+        $this->model->triggerAlert(1, 3, 99, 48, $now->addHour(-4)->getDatetime());
+        $this->model->triggerAlert(1, 1, 99, 48, $now->addHour(-5)->getDatetime());
+        $this->model->triggerAlert(1, 2, 99, 48, $now->addHour(-5)->getDatetime());
+        $this->model->triggerAlert(1, 3, 99, 48, $now->addHour(-5)->getDatetime());
+        $this->model->triggerAlert(1, 1, 99, 48, $now->addHour(-6)->getDatetime());
+        $this->model->triggerAlert(1, 2, 99, 48, $now->addHour(-6)->getDatetime());
+        $this->model->triggerAlert(1, 3, 99, 48, $now->addHour(-6)->getDatetime());
+        $this->model->triggerAlert(1, 1, 99, 48, $now->addHour(-7)->getDatetime());
+        $this->model->triggerAlert(1, 2, 99, 48, $now->addHour(-7)->getDatetime());
+        $this->model->triggerAlert(1, 3, 99, 48, $now->addHour(-7)->getDatetime());
+
+        // Test looking up only the latest 2 triggered alerts
+        $alerts = $this->model->getTriggeredAlertsFromPastNHours('day', 1, 2);
+        $this->assertCount(2, $alerts);
+
+        $this->assertEquals(1, $alerts[0]['idtriggered']);
+        $this->assertEquals(4, $alerts[1]['idtriggered']);
+
+        // Test looking up the latest 6 triggered alerts
+        $alerts = $this->model->getTriggeredAlertsFromPastNHours('day', 1, 6);
+        $this->assertCount(6, $alerts);
+
+        $this->assertEquals(1, $alerts[0]['idtriggered']);
+        $this->assertEquals(4, $alerts[1]['idtriggered']);
+        $this->assertEquals(7, $alerts[2]['idtriggered']);
+        $this->assertEquals(10, $alerts[3]['idtriggered']);
+        $this->assertEquals(13, $alerts[4]['idtriggered']);
+        $this->assertEquals(16, $alerts[5]['idtriggered']);
+
+        // Test looking up the latest triggered alerts for a different site
+        $alerts = $this->model->getTriggeredAlertsFromPastNHours('day', 2, 4);
+        $this->assertCount(4, $alerts);
+
+        $this->assertEquals(2, $alerts[0]['idtriggered']);
+        $this->assertEquals(5, $alerts[1]['idtriggered']);
+        $this->assertEquals(8, $alerts[2]['idtriggered']);
+        $this->assertEquals(11, $alerts[3]['idtriggered']);
+
+        // Test looking up the latest triggered alerts for the last site
+        $alerts = $this->model->getTriggeredAlertsFromPastNHours('day', 3, 3);
+        $this->assertCount(3, $alerts);
+
+        $this->assertEquals(3, $alerts[0]['idtriggered']);
+        $this->assertEquals(6, $alerts[1]['idtriggered']);
+        $this->assertEquals(9, $alerts[2]['idtriggered']);
+    }
 }

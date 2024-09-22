@@ -71,6 +71,8 @@
         "ValuePercentageIncreasedMoreThan": "increased more than %1$s%% from %2$s to %3$s",
         "WeekComparedToPreviousWeek": "previous week",
         "When": "when",
-        "YouCanChoosePeriodFrom": "You can choose from the following options"
+        "YouCanChoosePeriodFrom": "You can choose from the following options",
+        "TaskRetryExceptionMessage": "The following alerts were unable to process because archiving is not complete for the associated reports: %1$s",
+        "FinalTaskRetryWarning": "Final retry of alerts task. Unable to process the following alerts: %1$s"
     }
 }

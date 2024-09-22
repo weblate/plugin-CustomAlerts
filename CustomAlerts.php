@@ -10,14 +10,26 @@
 namespace Piwik\Plugins\CustomAlerts;
 
 use Piwik\Common;
+use Piwik\Container\StaticContainer;
+use Piwik\Option;
 use Piwik\Piwik;
 use Piwik\Plugins\SitesManager\API as SitesManagerApi;
+use Piwik\Scheduler\Task;
 
 /**
  *
  */
 class CustomAlerts extends \Piwik\Plugin
 {
+    /**
+     * @var null|string
+     */
+    public static $currentlyRunningScheduledTaskName = null;
+
+    /**
+     * @var int
+     */
+    public static $currentlyRunningScheduledTaskRetryCount = 0;
 
     public function registerEvents()
     {
@@ -30,7 +42,9 @@ class CustomAlerts extends \Piwik\Plugin
             'Translate.getClientSideTranslationKeys' => 'getClientSideTranslationKeys',
             'UsersManager.deleteUser'                => 'deleteAlertsForLogin',
             'SitesManager.deleteSite.end'            => 'deleteAlertsForSite',
-            'Db.getTablesInstalled'                  => 'getTablesInstalled'
+            'Db.getTablesInstalled'                  => 'getTablesInstalled',
+            'ScheduledTasks.execute'                 => 'startingScheduledTask',
+            'ScheduledTasks.execute.end'             => 'endingScheduledTask',
         );
     }
 
@@ -181,6 +195,43 @@ class CustomAlerts extends \Piwik\Plugin
         }
 
         return array_values(array_unique($siteIdsHavingAlerts));
+    }
+
+    /**
+     * If the task is for CustomAlerts, save the name of the task as static property so that we know what the currently
+     * running task is.
+     *
+     * @param Task $task
+     * @return void
+     */
+    public function startingScheduledTask(Task $task): void
+    {
+        if (strpos($taskName = $task->getName(), 'Piwik\Plugins\CustomAlerts\Tasks') === false) {
+            return;
+        }
+
+        self::$currentlyRunningScheduledTaskName = $taskName;
+
+        /** @var \Piwik\Scheduler\Timetable $timetable */
+        $timetable = StaticContainer::getContainer()->get('Piwik\Scheduler\Timetable');
+        // Look up the retry count so that we know whether this is a retry or not
+        self::$currentlyRunningScheduledTaskRetryCount = $timetable->getRetryCount($taskName);
+    }
+
+    /**
+     * If the task is for CustomAlerts, clear the property containing the name of the task that just ran.
+     *
+     * @param Task $task
+     * @return void
+     */
+    public function endingScheduledTask(Task $task): void
+    {
+        if (strpos($task->getName(), 'Piwik\Plugins\CustomAlerts\Tasks') === false) {
+            return;
+        }
+
+        self::$currentlyRunningScheduledTaskName = null;
+        self::$currentlyRunningScheduledTaskRetryCount = 0;
     }
 
     public function getClientSideTranslationKeys(&$translations)

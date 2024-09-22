@@ -8,9 +8,13 @@
 
 namespace Piwik\Plugins\CustomAlerts\tests\Integration;
 
+use Piwik\Container\StaticContainer;
 use Piwik\Date;
+use Piwik\Option;
 use Piwik\Piwik;
 use Piwik\Plugins\CustomAlerts\CustomAlerts;
+use Piwik\Scheduler\Task;
+use Piwik\Scheduler\Timetable;
 
 /**
  * @group CustomAlerts
@@ -29,6 +33,30 @@ class CustomAlertsTest extends BaseTest
         parent::setUp();
 
         $this->plugin = new CustomAlerts();
+
+        CustomAlerts::$currentlyRunningScheduledTaskName = null;
+        CustomAlerts::$currentlyRunningScheduledTaskRetryCount = 0;
+    }
+
+    private function getTestTask(bool $useOtherPluginTask = false): Task
+    {
+        $schedule = \Piwik\Scheduler\Schedule\Schedule::factory('daily');
+
+        if ($useOtherPluginTask) {
+            return new Task(\Piwik\Plugins\ActivityLog\Tasks::class, 'anonymizeIps', 1, $schedule, \Piwik\Plugin\Tasks::NORMAL_PRIORITY);
+        }
+
+        return new Task(\Piwik\Plugins\CustomAlerts\Tasks::class, 'runAlertsDaily', 1, $schedule, \Piwik\Plugin\Tasks::NORMAL_PRIORITY);
+    }
+
+    private function checkOptionStringValue(bool $isNullTaskName = false, int $expectedRetryCount = 0)
+    {
+        if ($isNullTaskName) {
+            $this->assertNull(CustomAlerts::$currentlyRunningScheduledTaskName);
+        } else {
+            $this->assertSame('Piwik\Plugins\CustomAlerts\Tasks.runAlertsDaily_1', CustomAlerts::$currentlyRunningScheduledTaskName);
+        }
+        $this->assertSame($expectedRetryCount, CustomAlerts::$currentlyRunningScheduledTaskRetryCount);
     }
 
     public function test_getSiteIdsHavingAlerts()
@@ -149,4 +177,75 @@ class CustomAlertsTest extends BaseTest
         $this->assertEquals('Initial6', $alerts[2]['name']);
     }
 
+    public function testStartingScheduledTask()
+    {
+        $this->checkOptionStringValue(true);
+
+        $task = $this->getTestTask();
+        $this->plugin->startingScheduledTask($task);
+
+        $this->checkOptionStringValue();
+    }
+
+    public function testStartingScheduledTaskAsRetry()
+    {
+        $this->checkOptionStringValue(true);
+
+        $task = $this->getTestTask();
+
+        // Increment the retry count
+        StaticContainer::get(Timetable::class)->incrementRetryCount($task->getName());
+
+        $this->plugin->startingScheduledTask($task);
+
+        $this->checkOptionStringValue(false, 1);
+
+        // Increment and check again
+        StaticContainer::get(Timetable::class)->incrementRetryCount($task->getName());
+
+        $this->plugin->startingScheduledTask($task);
+
+        $this->checkOptionStringValue(false, 2);
+    }
+
+    public function testStartingScheduledTaskOtherPlugin()
+    {
+        $this->checkOptionStringValue(true);
+
+        $task = $this->getTestTask(true);
+        $this->plugin->startingScheduledTask($task);
+
+        $this->assertNull(CustomAlerts::$currentlyRunningScheduledTaskName);
+    }
+
+    public function testEndingScheduledTask()
+    {
+        $this->checkOptionStringValue(true);
+
+        $task = $this->getTestTask();
+
+        // Create the record and confirm that it's there
+        $this->plugin->startingScheduledTask($task);
+        $this->checkOptionStringValue();
+
+        // Call the method to clear the values and confirm that it has been done
+        $this->plugin->endingScheduledTask($task);
+        $this->checkOptionStringValue(true);
+    }
+
+    public function testEndingScheduledTaskOtherPlugin()
+    {
+        $this->checkOptionStringValue(true);
+
+        $task = $this->getTestTask();
+
+        // Create the record and confirm that it's there
+        $this->plugin->startingScheduledTask($task);
+        $this->checkOptionStringValue();
+
+        // Confirm that a task for a different plugin doesn't clear the CustomAlerts values
+        $task = $this->getTestTask(true);
+        $this->plugin->endingScheduledTask($task);
+        $this->checkOptionStringValue();
+    }
 }

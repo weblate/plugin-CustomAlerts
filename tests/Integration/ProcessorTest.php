@@ -13,16 +13,30 @@ use Piwik\Container\StaticContainer;
 use Piwik\DataTable;
 use Piwik\DataTable\Row;
 use Piwik\Date;
+use Piwik\Log\LoggerInterface;
+use Piwik\Plugins\CustomAlerts\CustomAlerts;
+use Piwik\Plugins\CustomAlerts\Model;
 use Piwik\Plugins\CustomAlerts\Processor;
+use Piwik\Scheduler\RetryableException;
+use Piwik\Scheduler\Task;
 use Piwik\Tests\Framework\Fixture;
 
 class CustomProcessor extends Processor
 {
+    public $processedCount;
+
+    public $throwExceptionOnProcessedAlertNumbers;
+
     public function __construct()
     {
         $processedReport = StaticContainer::get('Piwik\Plugins\API\ProcessedReport');
         $validator       = StaticContainer::get('Piwik\Plugins\CustomAlerts\Validator');
-        parent::__construct($processedReport, $validator);
+        $model           = StaticContainer::get('Piwik\Plugins\CustomAlerts\Model');
+
+        $this->processedCount = 0;
+        $this->throwExceptionOnProcessedAlertNumbers = [];
+
+        parent::__construct($processedReport, $validator, $model);
     }
 
     public function filterDataTable($dataTable, $condition, $value)
@@ -37,7 +51,16 @@ class CustomProcessor extends Processor
 
     public function processAlert($alert, $idSite)
     {
-        parent::processAlert($alert, $idSite);
+        ++$this->processedCount;
+
+        if (!empty($this->throwExceptionOnProcessedAlertNumbers) && in_array($this->processedCount, $this->throwExceptionOnProcessedAlertNumbers)) {
+            throw new RetryableException('Retryable exception');
+        }
+
+        // If we're testing that the exception gets thrown, don't try to actually process the alert
+        if (empty($this->throwExceptionOnProcessedAlertNumbers)) {
+            parent::processAlert($alert, $idSite);
+        }
     }
 
     public function shouldBeTriggered($alert, $metricOne, $metricTwo)
@@ -59,6 +82,11 @@ class ProcessorTest extends BaseTest
     private $processor;
 
     /**
+     * @var Model
+     */
+    public $alertModel;
+
+    /**
      * @param Fixture $fixture
      */
     protected static function configureFixture($fixture)
@@ -70,8 +98,18 @@ class ProcessorTest extends BaseTest
     public function setUp(): void
     {
         parent::setUp();
+        Fixture::loadAllTranslations();
 
         $this->processor = new CustomProcessor();
+
+        $this->alertModel = new Model();
+        CustomAlerts::$currentlyRunningScheduledTaskRetryCount = 0;
+    }
+
+    public function tearDown(): void
+    {
+        Fixture::resetTranslations();
+        parent::tearDown();
     }
 
     public function test_filterDataTable_Condition_MatchesAny()
@@ -118,7 +156,8 @@ class ProcessorTest extends BaseTest
 
     public function test_filterDataTable_MatchesExactlyIntegration()
     {
-        $date = Date::today()->addHour(10);
+        // Use yesterday's date so that the archiving shows as complete for the report
+        $date = Date::yesterday();
 
         $t = Fixture::getTracker($this->idSite, $date->getDatetime(), $defaultInit = true);
         $t->enableBulkTracking();
@@ -177,9 +216,65 @@ class ProcessorTest extends BaseTest
                 'report_matched'   => Common::sanitizeInputValue($assert[1])
             );
 
-            $value = $this->processor->getValueForAlertInPast($alert, $this->idSite, 0);
+            $value = $this->processor->getValueForAlertInPast($alert, $this->idSite, 1);
 
             $this->assertEquals($assert[2], $value, $assert[0] . ':' . $assert[1] . ' should return value ' . $assert[2] . ' but returns ' . $value);
+        }
+    }
+
+    public function testGetValueForAlertInPastIncompleteArchive()
+    {
+        // Use today's date so that the archiving shows as incomplete for the report
+        $date = Date::today();
+
+        $t = Fixture::getTracker($this->idSite, $date->getDatetime(), $defaultInit = true);
+        $t->enableBulkTracking();
+
+        $t->setUrlReferrer('http://www.google.com.vn/url?sa=t&rct=j&q=%3C%3E%26%5C%22the%20pdo%20extension%20is%20required%20for%20this%20adapter%20but%20the%20extension%20is%20not%20loaded&source=web&cd=4&ved=0FjAD&url=http%3A%2F%2Fforum.piwik.org%2Fread.php%3F2%2C1011&ei=y-HHAQ&usg=AFQjCN2-nt5_GgDeg&cad=rja');
+        $t->setUrl('http://example.org/%C3%A9%C3%A9%C3%A9%22%27...%20%3Cthis%20is%20cool%3E!');
+        $t->doTrackPageView('incredible title! <>,;');
+
+        $t->setForceVisitDateTime($date->addHour(.1)->getDatetime());
+        $t->setUrl('http://example.org/dir/file.php?foo=bar&foo2=bar');
+        $t->setPerformanceTimings(0, 123, 234, 345, 456, 567);
+        $t->doTrackPageView('incredible title! <>,;');
+
+        $t->setForceVisitDateTime($date->addHour(.2)->getDatetime());
+        $t->setUrl('http://example.org/dir/file/xyz.php?foo=bar&foo2=bar');
+        $t->doTrackPageView('incredible title! <>,;');
+
+        $t->setForceVisitDateTime($date->addHour(.2)->getDatetime());
+        $t->setUrl('http://example.org/what-is-piwik');
+        $t->doTrackPageView('incredible title! <>,;');
+
+        $t->setForceVisitDateTime($date->addHour(.3)->getDatetime());
+        $t->setUrl('http://example.org/dir/file.php?foo=bar&foo2=bar');
+        $t->doTrackPageView('incredible title! <>,;');
+
+        Fixture::checkBulkTrackingResponse($t->doBulkTrack());
+
+        $alert = [
+            'name'             => 'Test alert name',
+            'report'           => 'Actions_getPageUrls',
+            'metric'           => 'nb_hits',
+            'period'           => 'day',
+            'report_condition' => 'contains',
+            'report_matched'   => 'foo'
+        ];
+
+        // Should just return no data if the archive status isn't present
+        $result = $this->processor->getValueForAlertInPast($alert, $this->idSite, 1);
+        $this->assertNull($result);
+
+        // Should throw an exception if the archive state is incomplete
+        $isNewEnoughMatomo = version_compare(\Piwik\Version::VERSION, '5.1.0-b1', '>=');
+        if ($isNewEnoughMatomo) {
+            $this->expectException(RetryableException::class);
+        }
+        $value = $this->processor->getValueForAlertInPast($alert, $this->idSite, 0);
+
+        if (!$isNewEnoughMatomo) {
+            $this->assertEquals(3, $value, $alert['metric'] . ':' . $alert['report_matched'] . ' should return value 3 but returns ' . $value);
         }
     }
 
@@ -529,5 +624,151 @@ class ProcessorTest extends BaseTest
         $this->expectException(\Exception::class);
 
         $this->assertShouldBeTriggered('NotExistInG', 30, 100, 70);
+    }
+
+    public function testProcessAlerts()
+    {
+        $alertId = $this->createAlert('TestAlert1');
+        $alert = $this->alertModel->getAlert($alertId);
+
+        $mockProcessor = $this->createPartialMock(CustomProcessor::class, ['processAlert']);
+        $mockProcessor->expects($this->once())->method('processAlert')->with($this->equalTo($alert), $this->equalTo(1));
+        $mockProcessor->__construct();
+
+        $mockProcessor->processAlerts('day', $this->idSite);
+    }
+
+    public function testProcessAlertsSkipPreviouslyProcessedAlerts()
+    {
+        $alertId = $this->createAlert('TestAlert1');
+        $this->alertModel->getAlert($alertId);
+
+        // Mark the alert as triggered so that it won't process again
+        $this->alertModel->triggerAlert($alertId, $this->idSite, 10, 20, Date::now()->getDatetime());
+
+        $mockProcessor = $this->createPartialMock(CustomProcessor::class, ['processAlert']);
+        $mockProcessor->expects($this->never())->method('processAlert');
+        $mockProcessor->__construct();
+
+        $mockProcessor->processAlerts('day', $this->idSite);
+    }
+
+    public function testProcessAlertsOnException()
+    {
+        $alertId = $this->createAlert('TestAlert1');
+        $alert = $this->alertModel->getAlert($alertId);
+
+        $mockProcessor = $this->createPartialMock(CustomProcessor::class, ['processAlert']);
+        $mockProcessor->expects($this->once())->method('processAlert')->with($this->equalTo($alert), $this->equalTo(1))->willThrowException(new RetryableException());
+        $mockProcessor->__construct();
+
+        $loggerMock = $this->createMock(LoggerInterface::class);
+        $loggerMock->expects($this->never())->method('warning');
+        StaticContainer::getContainer()->set(LoggerInterface::class, $loggerMock);
+
+        $this->expectException(RetryableException::class);
+        $mockProcessor->processAlerts('day', $this->idSite);
+    }
+
+    public function testProcessAlertsOnExceptionMultipleAlerts()
+    {
+        $this->createAlert('TestAlert1');
+        $this->createAlert('TestAlert2');
+        $this->createAlert('TestAlert3');
+        $this->createAlert('TestAlert4');
+        $this->createAlert('TestAlert5');
+
+        $this->processor->throwExceptionOnProcessedAlertNumbers = [3, 5];
+
+        $loggerMock = $this->createMock(LoggerInterface::class);
+        $loggerMock->expects($this->never())->method('warning');
+        StaticContainer::getContainer()->set(LoggerInterface::class, $loggerMock);
+
+        try {
+            $this->processor->processAlerts('day', $this->idSite);
+            $this->fail('This should have thrown an exception');
+        } catch (RetryableException $e) {
+            $this->assertSame(5, $this->processor->processedCount);
+            $errorMessage = "The following alerts were unable to process because archiving is not complete for the associated reports: \nID: 3 Name: TestAlert3 Login: superUserLogin Report: MultiSites_getOne\nID: 5 Name: TestAlert5 Login: superUserLogin Report: MultiSites_getOne";
+            $this->assertSame($errorMessage, $e->getMessage());
+        }
+    }
+
+    public function testProcessAlertsOnExceptionLastRetry()
+    {
+        $alertId = $this->createAlert('TestAlert1');
+        $alert = $this->alertModel->getAlert($alertId);
+
+        $mockProcessor = $this->createPartialMock(CustomProcessor::class, ['processAlert']);
+        $mockProcessor->expects($this->once())->method('processAlert')->with($this->equalTo($alert), $this->equalTo(1))->willThrowException(new RetryableException());
+        $mockProcessor->__construct();
+
+        CustomAlerts::$currentlyRunningScheduledTaskRetryCount = 3;
+
+        $warningMessage = "Final retry of alerts task. Unable to process the following alerts: \nID: 1 Name: TestAlert1 Login: superUserLogin Report: MultiSites_getOne";
+
+        $loggerMock = $this->createMock(LoggerInterface::class);
+        $loggerMock->expects($this->once())->method('warning')->with($this->equalTo($warningMessage));
+        StaticContainer::getContainer()->set(LoggerInterface::class, $loggerMock);
+
+        $this->expectException(RetryableException::class);
+        $mockProcessor->processAlerts('day', $this->idSite);
+    }
+
+    public function testProcessAlertsOnExceptionLastRetryMultipleAlerts()
+    {
+        $this->createAlert('TestAlert1');
+        $this->createAlert('TestAlert2');
+        $this->createAlert('TestAlert3');
+        $this->createAlert('TestAlert4');
+        $this->createAlert('TestAlert5');
+
+        CustomAlerts::$currentlyRunningScheduledTaskRetryCount = 3;
+        $this->processor->throwExceptionOnProcessedAlertNumbers = [2, 4];
+
+        $failedAlertsString = "\nID: 2 Name: TestAlert2 Login: superUserLogin Report: MultiSites_getOne\nID: 4 Name: TestAlert4 Login: superUserLogin Report: MultiSites_getOne";
+
+        $warningMessage = "Final retry of alerts task. Unable to process the following alerts: {$failedAlertsString}";
+
+        $loggerMock = $this->createMock(LoggerInterface::class);
+        $loggerMock->expects($this->once())->method('warning')->with($this->equalTo($warningMessage));
+        StaticContainer::getContainer()->set(LoggerInterface::class, $loggerMock);
+
+        try {
+            $this->processor->processAlerts('day', $this->idSite);
+            $this->fail('This should have thrown an exception');
+        } catch (RetryableException $e) {
+            $this->assertSame(5, $this->processor->processedCount);
+            $errorMessage = "The following alerts were unable to process because archiving is not complete for the associated reports: {$failedAlertsString}";
+            $this->assertSame($errorMessage, $e->getMessage());
+        }
+    }
+
+    private function createAlert(
+        $name,
+        $period = 'day',
+        $idSites = null,
+        $metric = 'nb_visits',
+        $report = 'MultiSites_getOne',
+        $login = 'superUserLogin'
+    )
+    {
+        if (is_null($idSites)) {
+            $idSites = $this->idSite;
+        }
+        if (!is_array($idSites)) {
+            $idSites = [$idSites];
+        }
+
+        $emails       = ['test1@example.com', 'test2@example.com'];
+        $phoneNumbers = ['0123456789'];
+
+        return $this->alertModel->createAlert($name, $idSites, $login, $period, 0, $emails, $phoneNumbers, $metric, 'less_than', 5, $comparedTo = 1, $report, 'matches_exactly', 'Piwik');
+    }
+
+    private function getTestTask(): Task
+    {
+        $schedule = \Piwik\Scheduler\Schedule\Schedule::factory('daily');
+        return new Task(\Piwik\Plugins\CustomAlerts\Tasks::class, 'runAlertsDaily', 1, $schedule, \Piwik\Plugin\Tasks::NORMAL_PRIORITY);
     }
 }
