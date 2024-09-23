@@ -1,6 +1,6 @@
 ## Changelog
 
-* 5.0.6 - 2024-10-23 Added check if reports used by alert are done archiving and retry if not archived
+* 5.0.6 - 2024-09-23 Added check if reports used by alert are done archiving and retry if not archived
 * 5.0.5 Combined all the actions into one column
 * 5.0.4 Added plugin category for Marketplace
 * 5.0.3 Added inline help to mention events filter FAQ
