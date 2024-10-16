@@ -44,7 +44,6 @@ class Validator
         $availablePhoneNumbers = (new \Piwik\Plugins\MobileMessaging\Model())->getActivatedPhoneNumbers(Piwik::getCurrentUserLogin());
 
         foreach ($phoneNumbers as $key => &$phoneNumber) {
-
             $phoneNumber = trim($phoneNumber);
 
             if (!in_array($phoneNumber, $availablePhoneNumbers)) {

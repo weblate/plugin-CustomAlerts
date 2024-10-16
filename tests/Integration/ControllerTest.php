@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Matomo - free/libre analytics platform
  *
@@ -108,8 +109,7 @@ FORMATTED;
         $report = 'MultiSites_getOne',
         $reportCondition = 'matches_exactly',
         $reportMatched = 'Piwik'
-    )
-    {
+    ) {
         return array(
             'idalert'           => $id,
             'idsite'            => $idSite,
@@ -192,7 +192,6 @@ FORMATTED;
 FORMATTED;
 
         $this->assertEquals($expected, $rendered, "Got following HTML response: " . var_export($rendered, true));
-
     }
 
     public function test_formatAlertsNoConditions_asHtml()
@@ -227,7 +226,6 @@ FORMATTED;
 FORMATTED;
 
         $this->assertEquals($expected, $rendered, "Got following HTML response: " . var_export($rendered, true));
-
     }
 
     public function test_enrichTriggeredAlerts_shouldEnrichAlerts_IfReportExistsAndMetricIsValid()
@@ -341,5 +339,4 @@ FORMATTED;
 
         $this->assertEquals($alerts, $enriched);
     }
-
 }

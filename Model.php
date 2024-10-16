@@ -20,7 +20,6 @@ use Piwik\Period;
  */
 class Model
 {
-
     public static function install()
     {
         $tableAlert = "`idalert` INT NOT NULL PRIMARY KEY ,
@@ -434,5 +433,4 @@ class Model
     {
         $this->getDb()->query("DELETE FROM " . Common::prefixTable("alert_triggered") . " WHERE idsite = ?", $idSite);
     }
-
 }

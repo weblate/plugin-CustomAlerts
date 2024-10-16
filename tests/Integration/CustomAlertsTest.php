@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Matomo - free/libre analytics platform
  *
@@ -10,7 +11,6 @@ namespace Piwik\Plugins\CustomAlerts\tests\Integration;
 
 use Piwik\Container\StaticContainer;
 use Piwik\Date;
-use Piwik\Option;
 use Piwik\Piwik;
 use Piwik\Plugins\CustomAlerts\CustomAlerts;
 use Piwik\Scheduler\Task;
@@ -89,8 +89,22 @@ class CustomAlertsTest extends BaseTest
             $login = Piwik::getCurrentUserLogin();
         }
 
-        $id = $this->model->createAlert($name, $idSites, $login, 'week', 0, $emails, $phoneNumbers, 'nb_visits',
-            'less_than', 5, $comparedTo = 7, $report, 'matches_exactly', 'Piwik');
+        $id = $this->model->createAlert(
+            $name,
+            $idSites,
+            $login,
+            'week',
+            0,
+            $emails,
+            $phoneNumbers,
+            'nb_visits',
+            'less_than',
+            5,
+            $comparedTo = 7,
+            $report,
+            'matches_exactly',
+            'Piwik'
+        );
 
         return $this->model->getAlert($id);
     }

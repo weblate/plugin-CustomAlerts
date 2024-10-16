@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Matomo - free/libre analytics platform
  *
@@ -20,7 +21,6 @@ use Piwik\Plugins\CustomAlerts\Model;
  */
 class ModelTest extends BaseTest
 {
-
     public function setUp(): void
     {
         parent::setUp();
@@ -38,8 +38,7 @@ class ModelTest extends BaseTest
         $metric = 'nb_visits',
         $report = 'MultiSites_getOne',
         $login = 'superUserLogin'
-    )
-    {
+    ) {
         if (is_null($idSites)) {
             $idSites = $this->idSite;
         }
@@ -127,8 +126,7 @@ class ModelTest extends BaseTest
         $report = 'MultiSites_getOne',
         $reportCondition = 'matches_exactly',
         $reportMatched = 'Piwik'
-    )
-    {
+    ) {
         if (is_null($idSites)) {
             $idSites = array($this->idSite);
         }
@@ -178,8 +176,7 @@ class ModelTest extends BaseTest
         $idSites = null,
         $metric = 'nb_visits',
         $report = 'MultiSites_getOne'
-    )
-    {
+    ) {
         if (is_null($idSites)) {
             $idSites = $this->idSite;
         }
@@ -190,8 +187,22 @@ class ModelTest extends BaseTest
         $emails       = array('test1@example.com', 'test2@example.com');
         $phoneNumbers = array('0123456789');
 
-        $id = $this->model->updateAlert($id, $name, $idSites, $period, 0, $emails, $phoneNumbers, $metric, 'less_than',
-            5, $comparedTo = 1, $report, 'matches_exactly', 'Piwik');
+        $id = $this->model->updateAlert(
+            $id,
+            $name,
+            $idSites,
+            $period,
+            0,
+            $emails,
+            $phoneNumbers,
+            $metric,
+            'less_than',
+            5,
+            $comparedTo = 1,
+            $report,
+            'matches_exactly',
+            'Piwik'
+        );
         return $id;
     }
 

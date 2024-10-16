@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Matomo - free/libre analytics platform
  *
@@ -39,8 +40,10 @@ class Updates_0_0_8 extends Updates
         $triggeredTable = Common::prefixTable('alert_triggered');
 
         return array(
-            $this->migration->db->sql("RENAME TABLE `" . Common::prefixTable('alert_log') . "` TO `" . Common::prefixTable('alert_triggered') . "`",
-                array(DbMigration::ERROR_CODE_DUPLICATE_COLUMN, DbMigration::ERROR_CODE_TABLE_NOT_EXISTS, DbMigration::ERROR_CODE_TABLE_EXISTS)),
+            $this->migration->db->sql(
+                "RENAME TABLE `" . Common::prefixTable('alert_log') . "` TO `" . Common::prefixTable('alert_triggered') . "`",
+                array(DbMigration::ERROR_CODE_DUPLICATE_COLUMN, DbMigration::ERROR_CODE_TABLE_NOT_EXISTS, DbMigration::ERROR_CODE_TABLE_EXISTS)
+            ),
             $this->migration->db->addColumns('alert_triggered', array(
                 'name'              => 'VARCHAR(100) NOT NULL',
                 'login'             => 'VARCHAR(100) NOT NULL',

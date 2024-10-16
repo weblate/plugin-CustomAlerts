@@ -72,7 +72,6 @@ class Notifier extends \Piwik\Plugin
         $alertsPerEmail = array();
 
         foreach ($triggeredAlerts as $triggeredAlert) {
-
             $emails = $this->getEmailRecipientsForAlert($triggeredAlert);
 
             foreach ($emails as $mail) {
@@ -189,7 +188,6 @@ class Notifier extends \Piwik\Plugin
         $recipients = array();
 
         foreach ($triggeredAlerts as $triggeredAlert) {
-
             $phoneNumbers = $triggeredAlert['phone_numbers'];
 
             if (empty($phoneNumbers)) {

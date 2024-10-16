@@ -11,7 +11,6 @@ namespace Piwik\Plugins\CustomAlerts;
 
 use Piwik\Common;
 use Piwik\Container\StaticContainer;
-use Piwik\Option;
 use Piwik\Piwik;
 use Piwik\Plugins\SitesManager\API as SitesManagerApi;
 use Piwik\Scheduler\Task;

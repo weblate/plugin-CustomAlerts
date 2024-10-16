@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Matomo - free/libre analytics platform
  *
@@ -535,8 +536,7 @@ class ProcessorTest extends BaseTest
         $metricMatched = '4',
         $period = 'month',
         $comparedTo = 12
-    )
-    {
+    ) {
         return array(
             'idalert'          => 1,
             'period'           => $period,
@@ -751,8 +751,7 @@ class ProcessorTest extends BaseTest
         $metric = 'nb_visits',
         $report = 'MultiSites_getOne',
         $login = 'superUserLogin'
-    )
-    {
+    ) {
         if (is_null($idSites)) {
             $idSites = $this->idSite;
         }

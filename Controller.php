@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Matomo - free/libre analytics platform
  *
@@ -105,7 +106,6 @@ class Controller extends \Piwik\Plugin\ControllerAdmin
         $idSite = $this->findSiteId($alert);
 
         if (!empty($idSite)) {
-
             return Site::getNameFor($idSite);
         }
     }
@@ -157,14 +157,12 @@ class Controller extends \Piwik\Plugin\ControllerAdmin
                 return $view->render();
 
             case 'sms':
-
                 $view                  = new View('@CustomAlerts/smsTriggeredAlerts');
                 $view->triggeredAlerts = $this->enrichTriggeredAlerts($triggeredAlerts);
 
                 return $view->render();
 
             case 'text':
-
                 $view                  = new View('@CustomAlerts/textTriggeredAlerts');
                 $view->triggeredAlerts = $this->enrichTriggeredAlerts($triggeredAlerts);
 
