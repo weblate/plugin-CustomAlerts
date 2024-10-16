@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Matomo - free/libre analytics platform
  *
@@ -18,7 +19,6 @@ use Piwik\Tests\Framework\Mock\FakeAccess;
  */
 class ApiTest extends BaseTest
 {
-
     public function setUp(): void
     {
         parent::setUp();
@@ -39,8 +39,7 @@ class ApiTest extends BaseTest
         $reportCondition = 'matches_exactly',
         $emails = array('test1@example.com', 'test2@example.com'),
         $comparedTo = 1
-    )
-    {
+    ) {
         if (is_null($idSites)) {
             $idSites = $this->idSite;
         }
@@ -48,8 +47,21 @@ class ApiTest extends BaseTest
         // those should be dropped by the api as they do not exist in Piwik
         $phoneNumbers = array('+1234567890', '1234567890');
 
-        $id = $this->api->addAlert($name, $idSites, $period, 0, $emails, $phoneNumbers, $metric, $metricCondition,
-            $metricMatched = 5, $comparedTo, $report, $reportCondition, 'Piwik');
+        $id = $this->api->addAlert(
+            $name,
+            $idSites,
+            $period,
+            0,
+            $emails,
+            $phoneNumbers,
+            $metric,
+            $metricCondition,
+            $metricMatched = 5,
+            $comparedTo,
+            $report,
+            $reportCondition,
+            'Piwik'
+        );
         return $id;
     }
 
@@ -164,8 +176,7 @@ class ApiTest extends BaseTest
         $report = 'MultiSites_getOne',
         $reportCondition = 'matches_exactly',
         $reportMatched = 'Piwik'
-    )
-    {
+    ) {
         if (is_null($idSites)) {
             $idSites = array($this->idSite);
         }
@@ -211,8 +222,7 @@ class ApiTest extends BaseTest
         $metricCondition = 'less_than',
         $reportCondition = 'matches_exactly',
         $emails = array('test1@example.com', 'test2@example.com')
-    )
-    {
+    ) {
         if (is_null($idSites)) {
             $idSites = $this->idSite;
         }
@@ -221,8 +231,22 @@ class ApiTest extends BaseTest
         $phoneNumbers = array('+1234567890', '1234567890');
         $comparedTo   = 1;
 
-        $id = $this->api->editAlert($id, $name, $idSites, $period, 0, $emails, $phoneNumbers, $metric, $metricCondition,
-            $metricMatched = 5, $comparedTo, $report, $reportCondition, 'Piwik');
+        $id = $this->api->editAlert(
+            $id,
+            $name,
+            $idSites,
+            $period,
+            0,
+            $emails,
+            $phoneNumbers,
+            $metric,
+            $metricCondition,
+            $metricMatched = 5,
+            $comparedTo,
+            $report,
+            $reportCondition,
+            'Piwik'
+        );
         return $id;
     }
 

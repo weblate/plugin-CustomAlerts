@@ -158,7 +158,6 @@ class API extends \Piwik\Plugin\API
         }
 
         foreach ($additionalEmails as &$email) {
-
             $email = trim($email);
             if (empty($email)) {
                 $email = false;
@@ -173,7 +172,6 @@ class API extends \Piwik\Plugin\API
         $availablePhoneNumbers = (new \Piwik\Plugins\MobileMessaging\Model())->getActivatedPhoneNumbers(Piwik::getCurrentUserLogin());
 
         foreach ($phoneNumbers as $key => &$phoneNumber) {
-
             $phoneNumber = trim($phoneNumber);
 
             if (!in_array($phoneNumber, $availablePhoneNumbers)) {
@@ -278,5 +276,4 @@ class API extends \Piwik\Plugin\API
 
         return $this->getModel()->getTriggeredAlerts($idSites, $login);
     }
-
 }

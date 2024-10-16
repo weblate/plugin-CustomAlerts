@@ -15,7 +15,6 @@ use Piwik\Container\StaticContainer;
 use Piwik\Context;
 use Piwik\DataTable;
 use Piwik\Date;
-use Piwik\Option;
 use Piwik\Piwik;
 use Piwik\Plugins\API\ProcessedReport;
 use Piwik\Scheduler\RetryableException;
@@ -453,5 +452,4 @@ class Processor
     {
         $this->getModel()->triggerAlert($alert['idalert'], $idSite, $valueNew, $valueOld, Date::now()->getDatetime());
     }
-
 }
