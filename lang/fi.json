@@ -65,6 +65,8 @@
         "ValueIncreasedMoreThan": "lisääntyi enemmän kuin %1$s %2$s:sta %3$s:een",
         "ValueIsGreaterThan": "on %2$s mikä on suurempi kuin %1$s",
         "ValueIsLessThan": "on %2$s mikä on vähemmän kuin %1$s",
+        "ValuePercentageDecreasedMoreThan": "laski yli %1$s %%, arvosta %2$s arvoon %3$s",
+        "ValuePercentageIncreasedMoreThan": "nousi yli %1$s %%, arvosta %2$s arvoon %3$s",
         "WeekComparedToPreviousWeek": "edellinen viikko",
         "When": "kun",
         "YouCanChoosePeriodFrom": "Voit valita seuraavista valinnoista"
